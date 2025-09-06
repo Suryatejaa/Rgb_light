@@ -1,0 +1,266 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Screen RGB Light — Surya Edition</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    html,body { height:100%; margin:0; }
+    body {
+      display:flex;
+      gap:16px;
+      align-items:center;
+      justify-content:center;
+      background:#000;
+      color:#fff;
+      font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial;
+      user-select:none;
+      overflow:hidden;
+    }
+
+    .controls {
+      position:fixed;
+      right:16px;
+      top:16px;
+      width:320px;
+      background:rgba(0,0,0,0.5);
+      backdrop-filter:blur(6px);
+      border-radius:12px;
+      padding:12px;
+      box-shadow:0 8px 30px rgba(0,0,0,0.6);
+    }
+    .controls h2 { margin:4px 0 8px; font-size:16px; }
+    .row { display:flex; gap:8px; align-items:center; margin:8px 0; }
+    label { font-size:13px; width:78px; }
+    select,input[type="range"],button { flex:1; }
+    .big-btn { width:48px; height:36px; border-radius:8px; border:none; cursor:pointer; }
+    .footer { font-size:12px; opacity:0.8; margin-top:8px; text-align:center; }
+    .mode-info { font-size:12px; opacity:0.9; margin-top:6px; }
+    .hint { font-size:12px; color: #ddd; opacity:0.8 }
+    .topline { display:flex; gap:8px; align-items:center; justify-content:space-between; }
+    .pill { background:rgba(255,255,255,0.06); padding:6px 8px; border-radius:999px; font-size:12px; }
+    @media (max-width:420px) {
+      .controls { left:8px; right:8px; width:auto; top:8px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="controls" id="controls" aria-hidden="false">
+    <div class="topline">
+      <h2>Screen RGB Light</h2>
+      <div class="pill">Press <strong>F11</strong> for fullscreen</div>
+    </div>
+
+    <div class="row">
+      <label>Mode</label>
+      <select id="mode">
+        <option value="static">Static</option>
+        <option value="breathing">Breathing</option>
+        <option value="strobe">Strobe</option>
+        <option value="hueCycle">Hue Cycle (Rainbow)</option>
+        <option value="transition">2-Color Transition</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label>Color A</label>
+      <input id="colorA" type="color" value="#ff2d55">
+    </div>
+
+    <div class="row" id="colorBrow">
+      <label>Color B</label>
+      <input id="colorB" type="color" value="#1ad6ff">
+    </div>
+
+    <div class="row">
+      <label>Speed</label>
+      <input id="speed" type="range" min="0.1" max="4" step="0.1" value="1">
+    </div>
+
+    <div class="row">
+      <label>Brightness</label>
+      <input id="brightness" type="range" min="0" max="1" step="0.01" value="0.9">
+    </div>
+
+    <div class="row">
+      <label>Strobe</label>
+      <input id="strobeDuty" type="range" min="0.01" max="0.9" step="0.01" value="0.5">
+    </div>
+
+    <div class="row">
+      <label>Apply</label>
+      <button id="apply" class="big-btn">GO</button>
+      <button id="randomize" class="big-btn">🎲</button>
+    </div>
+
+    <div class="mode-info" id="modeInfo">Mode info: Static color applied to the whole screen.</div>
+    <div class="footer hint">Tip: Use the "Hue Cycle" for smooth rainbow / "Breathing" for soft pulsing.</div>
+  </div>
+
+<script>
+/* Screen RGB Light — single-file app
+   Modes: static, breathing, strobe, hueCycle, transition
+   Animation loop uses requestAnimationFrame; speed controls frequency; brightness scales final color.
+*/
+
+const body = document.body;
+const colorAInput = document.getElementById('colorA');
+const colorBInput = document.getElementById('colorB');
+const modeSelect = document.getElementById('mode');
+const speedRange = document.getElementById('speed');
+const brightnessRange = document.getElementById('brightness');
+const strobeDuty = document.getElementById('strobeDuty');
+const applyBtn = document.getElementById('apply');
+const randomBtn = document.getElementById('randomize');
+const colorBrow = document.getElementById('colorBrow');
+const modeInfo = document.getElementById('modeInfo');
+
+let state = {
+  mode: modeSelect.value,
+  colorA: colorAInput.value,
+  colorB: colorBInput.value,
+  speed: parseFloat(speedRange.value),
+  brightness: parseFloat(brightnessRange.value),
+  strobeDuty: parseFloat(strobeDuty.value),
+  t0: performance.now()
+};
+
+function hexToRgb(hex) {
+  hex = hex.replace('#','');
+  if (hex.length === 3) hex = hex.split('').map(c => c+c).join('');
+  const num = parseInt(hex,16);
+  return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+}
+function rgbToCss(rgb, alpha=1) {
+  if (alpha === 1) return `rgb(${Math.round(rgb.r)},${Math.round(rgb.g)},${Math.round(rgb.b)})`;
+  return `rgba(${Math.round(rgb.r)},${Math.round(rgb.g)},${Math.round(rgb.b)},${alpha})`;
+}
+function lerp(a,b,t){ return a + (b-a)*t; }
+function lerpColor(c1,c2,t){
+  return { r: lerp(c1.r,c2.r,t), g: lerp(c1.g,c2.g,t), b: lerp(c1.b,c2.b,t) };
+}
+function hslToRgb(h,s,l){
+  // h in [0,360], s,l in [0,1]
+  h = h/360;
+  let r,g,b;
+  if (s === 0) r=g=b = l;
+  else {
+    const hue2rgb = (p, q, t) => {
+      if (t<0) t+=1;
+      if (t>1) t-=1;
+      if (t<1/6) return p + (q-p)*6*t;
+      if (t<1/2) return q;
+      if (t<2/3) return p + (q-p)*(2/3 - t)*6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l*s;
+    const p = 2*l - q;
+    r = hue2rgb(p,q,h + 1/3);
+    g = hue2rgb(p,q,h);
+    b = hue2rgb(p,q,h - 1/3);
+  }
+  return { r: r*255, g: g*255, b: b*255 };
+}
+
+function updateStateFromInputs(){
+  state.mode = modeSelect.value;
+  state.colorA = colorAInput.value;
+  state.colorB = colorBInput.value;
+  state.speed = parseFloat(speedRange.value);
+  state.brightness = parseFloat(brightnessRange.value);
+  state.strobeDuty = parseFloat(strobeDuty.value);
+  state.t0 = performance.now();
+  colorBrow.style.display = (state.mode === 'transition') ? 'flex' : 'none';
+  switch(state.mode){
+    case 'static': modeInfo.textContent = 'Static: solid color across the screen.'; break;
+    case 'breathing': modeInfo.textContent = 'Breathing: smooth pulse in/out.'; break;
+    case 'strobe': modeInfo.textContent = 'Strobe: on/off blinking. Use Speed and Duty to adjust.'; break;
+    case 'hueCycle': modeInfo.textContent = 'Hue Cycle: continuous rainbow across hues.'; break;
+    case 'transition': modeInfo.textContent = '2-Color transition: smooth blend between Color A and Color B.'; break;
+  }
+}
+
+applyBtn.addEventListener('click', () => updateStateFromInputs());
+modeSelect.addEventListener('change', updateStateFromInputs);
+[colorAInput,colorBInput,speedRange,brightnessRange,strobeDuty].forEach(el => el.addEventListener('input', updateStateFromInputs));
+
+randomBtn.addEventListener('click', () => {
+  // randomize color A/B and choose a random mode
+  const randHex = () => '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
+  colorAInput.value = randHex();
+  colorBInput.value = randHex();
+  const modes = ['static','breathing','strobe','hueCycle','transition'];
+  modeSelect.value = modes[Math.floor(Math.random()*modes.length)];
+  speedRange.value = (0.5 + Math.random()*3).toFixed(1);
+  brightnessRange.value = (0.5 + Math.random()*0.5).toFixed(2);
+  strobeDuty.value = (0.2 + Math.random()*0.6).toFixed(2);
+  updateStateFromInputs();
+});
+
+// Core animation
+function animate(now){
+  const dt = (now - state.t0) / 1000; // seconds since start
+  let outColor = { r:0,g:0,b:0 };
+  const aRGB = hexToRgb(state.colorA);
+  const bRGB = hexToRgb(state.colorB);
+
+  if (state.mode === 'static') {
+    outColor = aRGB;
+  } else if (state.mode === 'breathing') {
+    // smooth sin pulse between 0.1 and 1.0 amplitude
+    const freq = Math.max(0.05, state.speed * 0.4); // base freq
+    const t = (Math.sin(dt * Math.PI * 2 * freq) + 1) / 2; // 0..1
+    const amp = lerp(0.1, 1, t);
+    outColor = { r: aRGB.r * amp, g: aRGB.g * amp, b: aRGB.b * amp };
+  } else if (state.mode === 'strobe') {
+    // strobe on/off; speed controls frequency (Hz), duty controls on fraction
+    const freq = Math.max(0.5, state.speed * 2); // hz
+    const phase = (dt * freq) % 1;
+    const on = phase < state.strobeDuty;
+    outColor = on ? aRGB : { r:0,g:0,b:0 };
+  } else if (state.mode === 'hueCycle') {
+    // cycle hue across 0-360 depending on time * speed
+    const speed = Math.max(0.05, state.speed * 0.6);
+    const hue = (dt * 60 * speed) % 360;
+    const rgb = hslToRgb(hue, 1, 0.5);
+    outColor = rgb;
+  } else if (state.mode === 'transition') {
+    // blend between colorA and colorB in a smooth ping-pong
+    const freq = Math.max(0.05, state.speed * 0.2);
+    const t = (Math.sin(dt * Math.PI * 2 * freq) + 1) / 2; // 0..1
+    outColor = lerpColor(aRGB, bRGB, t);
+  }
+
+  // apply brightness scale (clamp)
+  const br = Math.max(0, Math.min(1, state.brightness));
+  outColor = { r: outColor.r * br, g: outColor.g * br, b: outColor.b * br };
+
+  // set background
+  body.style.background = rgbToCss(outColor);
+
+  requestAnimationFrame(animate);
+}
+
+// keyboard shortcuts
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'f' || e.key === 'F') {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{/*ignore*/});
+    else document.exitFullscreen().catch(()=>{/*ignore*/});
+  } else if (e.key === ' ' || e.key === 'Spacebar') {
+    // randomize on space
+    e.preventDefault();
+    randomBtn.click();
+  } else if (e.key === 'Escape') {
+    // hide controls
+    const vis = document.getElementById('controls');
+    vis.style.display = (vis.style.display === 'none') ? 'block' : 'none';
+  }
+});
+
+// init
+updateStateFromInputs();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
