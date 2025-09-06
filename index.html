@@ -95,6 +95,13 @@
         <option value="strobe">Strobe</option>
         <option value="hueCycle">Hue Cycle (Rainbow)</option>
         <option value="transition">2-Color Transition</option>
+        <option value="wave">Color Wave</option>
+        <option value="fire">Fire Effect</option>
+        <option value="ocean">Ocean Waves</option>
+        <option value="aurora">Aurora Borealis</option>
+        <option value="disco">Disco Party</option>
+        <option value="pulse">Pulse Beat</option>
+        <option value="matrix">Matrix Rain</option>
       </select>
     </div>
 
@@ -218,6 +225,13 @@ function updateStateFromInputs(){
     case 'strobe': modeInfo.textContent = 'Strobe: on/off blinking. Use Speed and Duty to adjust.'; break;
     case 'hueCycle': modeInfo.textContent = 'Hue Cycle: continuous rainbow across hues.'; break;
     case 'transition': modeInfo.textContent = '2-Color transition: smooth blend between Color A and Color B.'; break;
+    case 'wave': modeInfo.textContent = 'Color Wave: flowing wave pattern between colors.'; break;
+    case 'fire': modeInfo.textContent = 'Fire Effect: flickering warm flames simulation.'; break;
+    case 'ocean': modeInfo.textContent = 'Ocean Waves: deep blue waves with foam highlights.'; break;
+    case 'aurora': modeInfo.textContent = 'Aurora Borealis: dancing northern lights effect.'; break;
+    case 'disco': modeInfo.textContent = 'Disco Party: rapid random color changes.'; break;
+    case 'pulse': modeInfo.textContent = 'Pulse Beat: rhythmic heartbeat-like pulsing.'; break;
+    case 'matrix': modeInfo.textContent = 'Matrix Rain: green digital rain effect.'; break;
   }
 }
 
@@ -230,7 +244,7 @@ randomBtn.addEventListener('click', () => {
   const randHex = () => '#'+Math.floor(Math.random()*16777215).toString(16).padStart(6,'0');
   colorAInput.value = randHex();
   colorBInput.value = randHex();
-  const modes = ['static','breathing','strobe','hueCycle','transition'];
+  const modes = ['static','breathing','strobe','hueCycle','transition','wave','fire','ocean','aurora','disco','pulse','matrix'];
   modeSelect.value = modes[Math.floor(Math.random()*modes.length)];
   speedRange.value = (0.5 + Math.random()*3).toFixed(1);
   brightnessRange.value = (0.5 + Math.random()*0.5).toFixed(2);
@@ -279,6 +293,79 @@ function animate(now){
     const freq = Math.max(0.05, state.speed * 0.2);
     const t = (Math.sin(dt * Math.PI * 2 * freq) + 1) / 2; // 0..1
     outColor = lerpColor(aRGB, bRGB, t);
+  } else if (state.mode === 'wave') {
+    // flowing wave pattern
+    const waveSpeed = state.speed * 2;
+    const wave1 = (Math.sin(dt * waveSpeed) + 1) / 2;
+    const wave2 = (Math.sin(dt * waveSpeed + Math.PI/3) + 1) / 2;
+    const wave3 = (Math.sin(dt * waveSpeed + Math.PI*2/3) + 1) / 2;
+    outColor = {
+      r: aRGB.r * wave1 + bRGB.r * wave2,
+      g: aRGB.g * wave2 + bRGB.g * wave3,
+      b: aRGB.b * wave3 + bRGB.b * wave1
+    };
+  } else if (state.mode === 'fire') {
+    // fire effect with warm colors and random flicker
+    const flicker = 0.7 + Math.random() * 0.3;
+    const baseTemp = Math.sin(dt * state.speed) * 0.3 + 0.7;
+    const temp = baseTemp * flicker;
+    outColor = {
+      r: Math.min(255, 255 * temp),
+      g: Math.min(255, 180 * temp * 0.8),
+      b: Math.min(255, 50 * temp * 0.4)
+    };
+  } else if (state.mode === 'ocean') {
+    // ocean waves with deep blues and white foam
+    const wave = Math.sin(dt * state.speed * 0.8) * 0.5 + 0.5;
+    const foam = Math.sin(dt * state.speed * 3) * 0.3 + 0.7;
+    const depth = 0.1 + wave * 0.6;
+    outColor = {
+      r: Math.min(255, 30 + foam * 100),
+      g: Math.min(255, 80 + wave * 120),
+      b: Math.min(255, 120 + depth * 135)
+    };
+  } else if (state.mode === 'aurora') {
+    // aurora borealis with shifting greens and purples
+    const time = dt * state.speed * 0.5;
+    const aurora1 = Math.sin(time) * 0.5 + 0.5;
+    const aurora2 = Math.sin(time * 1.3 + Math.PI/4) * 0.5 + 0.5;
+    const aurora3 = Math.sin(time * 0.7 + Math.PI/2) * 0.5 + 0.5;
+    outColor = {
+      r: 50 + aurora3 * 150,
+      g: 100 + aurora1 * 155,
+      b: 80 + aurora2 * 120
+    };
+  } else if (state.mode === 'disco') {
+    // rapid random color changes
+    const changeRate = Math.floor(dt * state.speed * 10);
+    const seed = changeRate * 12345; // pseudo-random seed
+    const r = ((seed * 9301 + 49297) % 233280) / 233280;
+    const g = ((seed * 9307 + 49331) % 233280) / 233280;
+    const b = ((seed * 9311 + 49369) % 233280) / 233280;
+    outColor = { r: r * 255, g: g * 255, b: b * 255 };
+  } else if (state.mode === 'pulse') {
+    // heartbeat-like pulse
+    const beatSpeed = state.speed * 1.5;
+    const beat = dt * beatSpeed;
+    const pulse1 = Math.max(0, Math.sin(beat * Math.PI * 2));
+    const pulse2 = Math.max(0, Math.sin((beat - 0.15) * Math.PI * 2));
+    const intensity = Math.pow(Math.max(pulse1, pulse2 * 0.6), 3);
+    outColor = {
+      r: aRGB.r * intensity,
+      g: aRGB.g * intensity,
+      b: aRGB.b * intensity
+    };
+  } else if (state.mode === 'matrix') {
+    // matrix digital rain effect
+    const rainSpeed = state.speed * 4;
+    const digitFlicker = Math.sin(dt * rainSpeed) * 0.3 + 0.7;
+    const randomFlicker = (Math.sin(dt * rainSpeed * 7.3) + Math.sin(dt * rainSpeed * 11.7)) * 0.1 + 0.9;
+    const intensity = digitFlicker * randomFlicker;
+    outColor = {
+      r: 0,
+      g: Math.min(255, 150 * intensity),
+      b: Math.min(255, 50 * intensity)
+    };
   }
 
   // apply brightness scale (clamp)
